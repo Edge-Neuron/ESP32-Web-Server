@@ -1,0 +1,111 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include "FS.h"
+#include "SD_MMC.h"
+
+const char* ssid = "Your_Hotspot_SSID";
+const char* password = "Your_Hotspot_Password";
+
+WebServer server(80);
+
+
+void handleUploadForm() {
+  String html = R"rawliteral(
+    <!DOCTYPE html>
+    <html>
+    <head><title>Upload Image</title></head>
+    <body>
+      <h2>ESP32-CAM SD Upload</h2>
+      <form method='POST' action='/upload' enctype='multipart/form-data'>
+        <input type='file' name='file'><br><br>
+        <input type='submit' value='Upload Image'>
+      </form>
+    </body>
+    </html>
+  )rawliteral";
+  server.send(200, "text/html", html);
+}
+
+// Handle the image file upload
+void handleFileUpload() {
+  HTTPUpload& upload = server.upload();
+
+  if (upload.status == UPLOAD_FILE_START) {
+    String filename = "/" + upload.filename;
+    Serial.printf("Uploading: %s\n", filename.c_str());
+
+    // Open the file for writing to SD card
+    File file = SD_MMC.open(filename, FILE_WRITE);
+    if (!file) {
+      Serial.println("Failed to open file for writing");
+      return;
+    }
+    file.close();
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    File file = SD_MMC.open("/" + upload.filename, FILE_APPEND);
+    if (file) {
+      file.write(upload.buf, upload.currentSize);
+      file.close();
+    } else {
+      Serial.println("Error writing to file");
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    Serial.printf("Upload complete: %s (%u bytes)\n", upload.filename.c_str(), upload.totalSize);
+    server.send(200, "text/plain", "File uploaded successfully.");
+  }
+}
+
+// Not found handler
+void handleNotFound() {
+  server.send(404, "text/plain", "404 Not Found");
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi connected");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Initialize SD_MMC
+  if (!SD_MMC.begin()) {
+    Serial.println("SD Card Mount Failed");
+    return;
+  }
+
+  uint8_t cardType = SD_MMC.cardType();
+  if (cardType == CARD_NONE) {
+    Serial.println("No SD card attached");
+    return;
+  }
+
+  Serial.println("SD card initialized.");
+  Serial.print("SD Card Type: ");
+  if (cardType == CARD_MMC) Serial.println("MMC");
+  else if (cardType == CARD_SD) Serial.println("SDSC");
+  else if (cardType == CARD_SDHC) Serial.println("SDHC");
+
+  // Web server routes
+  server.on("/", HTTP_GET, handleUploadForm);
+  server.on("/upload", HTTP_POST, []() {
+    server.send(200, "text/plain", ""); // Response handled in upload handler
+  }, handleFileUpload);
+  server.onNotFound(handleNotFound);
+
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
+void loop() {
+  server.handleClient();
+}
