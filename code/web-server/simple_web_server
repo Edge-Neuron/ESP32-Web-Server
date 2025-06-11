@@ -1,0 +1,59 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+// Replace with your mobile hotspot credentials
+const char* ssid = "Your_Hotspot_SSID";
+const char* password = "Your_Hotspot_Password";
+
+// Web server runs on port 80
+WebServer server(80);
+
+// HTML page to serve
+String htmlPage = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ESP32 Web Server</title>
+  <style>
+    body { font-family: Arial; text-align: center; }
+    h1 { color: #007BFF; }
+  </style>
+</head>
+<body>
+  <h1>Hello from ESP32!</h1>
+  <p>This page is served via mobile hotspot.</p>
+</body>
+</html>
+)rawliteral";
+
+// Handle root URL
+void handleRoot() {
+  server.send(200, "text/html", htmlPage);
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Connecting to mobile hotspot...");
+
+  WiFi.begin(ssid, password);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nConnected to hotspot!");
+  Serial.print("ESP32 IP Address: ");
+  Serial.println(WiFi.localIP());
+
+  // Setup web server routes
+  server.on("/", handleRoot);
+  server.begin();
+  Serial.println("Web server started.");
+}
+
+void loop() {
+  server.handleClient();
+}
